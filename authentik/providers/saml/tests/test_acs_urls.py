@@ -219,7 +219,7 @@ class TestAuthNRequestACSURLs(TestCase):
 
 
 class TestSAMLProviderACSURLsAPI(APITestCase):
-    """Test the deprecated `acs_url` API field with multiple ACS URLs"""
+    """Test the ACS URL API"""
 
     def setUp(self):
         self.user = create_test_admin_user()
@@ -235,6 +235,27 @@ class TestSAMLProviderACSURLsAPI(APITestCase):
                 **data,
             },
             format="json",
+        )
+
+    def test_create(self):
+        """Test creating a provider with multiple ACS URLs"""
+        response = self.create(
+            acs_urls=[
+                {"url": DEFAULT, "index": 0},
+                {"url": SECOND, "is_default": True},
+                {"url": REGEX, "matching_mode": "regex"},
+            ]
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        body = response.json()
+        self.assertEqual(body["acs_url"], SECOND)
+        self.assertEqual(
+            body["acs_urls"],
+            [
+                {"url": DEFAULT, "matching_mode": "strict", "index": 0, "is_default": False},
+                {"url": SECOND, "matching_mode": "strict", "index": None, "is_default": True},
+                {"url": REGEX, "matching_mode": "regex", "index": None, "is_default": False},
+            ],
         )
 
     def test_create_legacy(self):
@@ -258,6 +279,37 @@ class TestSAMLProviderACSURLsAPI(APITestCase):
             [entry.url for entry in provider.acs_urls],
             [SECOND, "https://sp.example.com/new", REGEX],
         )
+
+    def test_create_missing(self):
+        """Test that at least one ACS URL is required"""
+        self.assertEqual(self.create().status_code, 400)
+        self.assertEqual(self.create(acs_urls=[]).status_code, 400)
+
+    def test_create_invalid(self):
+        """Test validation of ACS URLs"""
+        invalid = [
+            # Invalid URL
+            [{"url": "not a url"}],
+            # Non-http(s) scheme
+            [{"url": "javascript:alert(1)"}],
+            # Invalid regex
+            [{"url": DEFAULT}, {"url": "[", "matching_mode": "regex"}],
+            # Regex as default
+            [{"url": DEFAULT}, {"url": REGEX, "matching_mode": "regex", "is_default": True}],
+            # Regex with index
+            [{"url": DEFAULT}, {"url": REGEX, "matching_mode": "regex", "index": 1}],
+            # Only regex
+            [{"url": REGEX, "matching_mode": "regex"}],
+            # Duplicate index
+            [{"url": DEFAULT, "index": 1}, {"url": SECOND, "index": 1}],
+            # Multiple defaults
+            [{"url": DEFAULT, "is_default": True}, {"url": SECOND, "is_default": True}],
+            # Negative index
+            [{"url": DEFAULT, "index": -1}],
+        ]
+        for acs_urls in invalid:
+            with self.subTest(acs_urls=acs_urls):
+                self.assertEqual(self.create(acs_urls=acs_urls).status_code, 400)
 
     def test_filter(self):
         """Test filtering providers by any of their ACS URLs"""

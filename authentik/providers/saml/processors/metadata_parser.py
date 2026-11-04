@@ -197,7 +197,8 @@ class ServiceProviderMetadataParser:
             try:
                 index = int(endpoint.attrib.get("index", ""))
             except ValueError:
-                pass
+                # Invalid or missing ACS index in metadata; keep index unset.
+                index = None
             if index is not None and any(entry.index == index for entry in acs_urls):
                 index = None
             is_default = not default_set and location == default_location
